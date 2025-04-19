@@ -23,11 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests google-cloud-bigquery python-dotenv
 
-      - name: Set up Google credentials
+      - name: Decode and write Google credentials
         run: |
-          cat <<EOF > auth.json
-          ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          EOF
+          echo "${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}" | base64 --decode > auth.json
           export GOOGLE_APPLICATION_CREDENTIALS=auth.json
         shell: bash
 
