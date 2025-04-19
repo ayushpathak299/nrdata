@@ -19,8 +19,8 @@ class NrOrgData:
     # X_CAP_API_AUTH_KEY = config["Default"]["X-CAP-API-AUTH-KEY"]
     # Authorization = config["Default"]["Authorization"]
     newrelic_key = os.getenv("NEWRELIC_API_KEY")
-
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH")
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is None:
+        os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_PATH", "auth.json")
 
 
     url = "https://api.newrelic.com/graphql"
