@@ -25,8 +25,11 @@ jobs:
 
       - name: Set up Google credentials
         run: |
-          echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > auth.json
+          cat <<EOF > auth.json
+          ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          EOF
           export GOOGLE_APPLICATION_CREDENTIALS=auth.json
+        shell: bash
 
       - name: Run NewRelic data script
         env:
