@@ -8,10 +8,32 @@ import configparser
 import time
 from dotenv import load_dotenv
 import os
+import psycopg2
+from datetime import date
+
 
 # Load .env variables
 load_dotenv()
+cluster_totals = {}
+def send_failure_slack(error_message):
+    slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL")
 
+    if not slack_webhook_url:
+        print("Slack webhook URL is missing. Cannot send failure notification.")
+        return
+
+    payload = {
+        "text": f"🚨 *ETL Job Alert - NewRelic* 🚨\n\n*Details:* {error_message}\n\n*Please check immediately.*"
+    }
+
+    try:
+        response = requests.post(slack_webhook_url, json=payload)
+        if response.status_code == 200:
+            print("Slack notification sent successfully!")
+        else:
+            print(f"Failed to send Slack notification: {response.text}")
+    except Exception as e:
+        print(f"Exception while sending Slack notification: {e}")
 
 class NrOrgData:
     # config = configparser.ConfigParser()
@@ -45,10 +67,6 @@ class NrOrgData:
         'Accept': "application/json",
         'API-Key': newrelic_key
     }
-    # fromdate = "2025-03-21"
-    # toDate = "2025-03-22"
-    # metricdate = "2025-03-21"
-
     today = date.today()
     d1 = today.strftime("%Y-%m-%d")
     fromdate = (datetime.today() + timedelta(days=-1)).strftime("%Y-%m-%d")
@@ -118,7 +136,10 @@ class NrOrgData:
                 orgdata = responedata["data"]["actor"]["account"]["nrql"]["results"]
             except Exception as ex:
                 orgdata = []
-            print("Total Records for {} is :{}".format(appnames[i], len(orgdata)))
+            cluster_name = appnames[i]["key"]
+            record_count = len(orgdata)
+            print(f"Total Records for {cluster_name} ({appnames[i]['value']}): {record_count}")
+            cluster_totals[cluster_name] = cluster_totals.get(cluster_name, 0) + record_count
             for data in orgdata:
                 facet = data["facet"]
                 if facet[0] != "null":
@@ -223,7 +244,10 @@ class NrOrgData:
                 orgdata = responedata["data"]["actor"]["account"]["nrql"]["results"]
             except Exception as ex:
                 orgdata = []
-            print("Total Records for {} is :{}".format(appnames[i], len(orgdata)))
+            cluster_name = appnames[i]["key"]
+            record_count = len(orgdata)
+            print(f"Total Records for {cluster_name} ({appnames[i]['value']}): {record_count}")
+            cluster_totals[cluster_name] = cluster_totals.get(cluster_name, 0) + record_count
             for data in orgdata:
                 facet = data["facet"]
                 if facet[0] != "null":
@@ -327,7 +351,10 @@ class NrOrgData:
                 orgdata = responedata["data"]["actor"]["account"]["nrql"]["results"]
             except Exception as ex:
                 orgdata = []
-            print("Total Records for {} is :{}".format(appnames[i], len(orgdata)))
+            cluster_name = appnames[i]["key"]
+            record_count = len(orgdata)
+            print(f"Total Records for {cluster_name} ({appnames[i]['value']}): {record_count}")
+            cluster_totals[cluster_name] = cluster_totals.get(cluster_name, 0) + record_count
             for data in orgdata:
                 facet = data["facet"]
                 if facet[0] != "null":
@@ -426,7 +453,10 @@ class NrOrgData:
                 orgdata = responedata["data"]["actor"]["account"]["nrql"]["results"]
             except Exception as ex:
                 orgdata = []
-            print("Total Records for {} is :{}".format(appnames[i], len(orgdata)))
+            cluster_name = appnames[i]["key"]
+            record_count = len(orgdata)
+            print(f"Total Records for {cluster_name} ({appnames[i]['value']}): {record_count}")
+            cluster_totals[cluster_name] = cluster_totals.get(cluster_name, 0) + record_count
             for data in orgdata:
                 facet = data["facet"]
                 if facet[0] != "null":
@@ -486,4 +516,43 @@ class NrOrgData:
                 END
             );
        """.format(table_id1, table_id, table_id2)
+    print("\n===== Final Record Count by Cluster =====")
+    ct=0
+    for cluster, total in cluster_totals.items():
+        ct+=total
+        print(f"{cluster}: {total} records")
+    total
     job = client.query(insert_query)
+    try:
+        connection = psycopg2.connect(
+            host=os.getenv("DB_HOST"),
+            database=os.getenv("DB_NAME"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            port=os.getenv("DB_PORT")
+        )
+        connection.autocommit = True
+        cursor = connection.cursor()
+
+        source = 'NewRelic'
+        run_date = date.today().strftime("%Y-%m-%d")
+        record_count = ct
+
+        sqlquery = """INSERT INTO etl_status_log (source, record_count, run_date) VALUES (%s, %s, %s)"""
+        cursor.execute(sqlquery, (source, record_count, run_date))
+        connection.commit()
+        print(f"ETL status logged for NewRelic with {record_count} records.")
+
+        # 🚨 Slack Alert Condition
+        if record_count < 3500:
+            send_failure_slack(f"⚠️ *Low record count:* Only {record_count} records inserted (expected >= 3500).")
+        elif record_count > 12000:
+            send_failure_slack(f"⚠️ *High record count:* {record_count} records inserted (expected <= 9000).")
+
+    except Exception as e:
+        print(f"Failed to log ETL summary for NewRelic: {e}")
+        send_failure_slack(f"Logging failed for NewRelic ETL: {str(e)}")
+
+    finally:
+        if connection:
+            connection.close()
